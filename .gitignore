@@ -7,3 +7,8 @@ dist/
 build/
 *.egg-info/
 .env
+.codex/install.log
+.codex/*.tmp
+.venv/.max_mcp_codex_installed
+tests/max_mcp_bridge_test.jsonl
+tests/max_mcp_bridge_smoke.max

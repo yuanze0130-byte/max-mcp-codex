@@ -1,0 +1,1 @@
+﻿#("maxVersion=27000", "dotNet=dotNetClass:System.Net.Sockets.TcpListener", "json=dotNetClass:Newtonsoft.Json.JsonConvert", "serializer=undefined")

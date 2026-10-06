@@ -15,7 +15,11 @@ def _call(method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     try:
         return bridge.call(method, params)
     except BridgeError as exc:
-        return {"ok": False, "error": str(exc), "method": method}
+        return {
+            "ok": False,
+            "error": {"code": "bridge_unavailable", "message": str(exc)},
+            "method": method,
+        }
 
 
 @mcp.tool()
@@ -56,6 +60,31 @@ def create_box(
 
 
 @mcp.tool()
+def create_cylinder(
+    name: str,
+    radius: float,
+    height: float,
+    x: float = 0.0,
+    y: float = 0.0,
+    z: float = 0.0,
+    segments: int = 32,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Create a cylinder with explicit dimensions in world units."""
+    return _call(
+        "object.create_cylinder",
+        {
+            "name": name,
+            "radius": radius,
+            "height": height,
+            "segments": segments,
+            "position": [x, y, z],
+            "dry_run": dry_run,
+        },
+    )
+
+
+@mcp.tool()
 def transform_object(
     name: str,
     x: float | None = None,
@@ -67,15 +96,28 @@ def transform_object(
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Apply an explicit transform and return the post-edit transform."""
+    position = [x, y, z] if any(value is not None for value in (x, y, z)) else None
+    rotation = [rx, ry, rz] if any(value is not None for value in (rx, ry, rz)) else None
+    if position is None and rotation is None:
+        return {
+            "ok": False,
+            "error": {"code": "invalid_transform", "message": "Provide at least one position or rotation component."},
+        }
     return _call(
         "object.transform",
         {
             "name": name,
-            "position": None if None in (x, y, z) else [x, y, z],
-            "rotation_degrees": None if None in (rx, ry, rz) else [rx, ry, rz],
+            "position": position,
+            "rotation_degrees": rotation,
             "dry_run": dry_run,
         },
     )
+
+
+@mcp.tool()
+def delete_object(name: str, dry_run: bool = False) -> dict[str, Any]:
+    """Delete one named object in a single undo transaction."""
+    return _call("object.delete", {"name": name, "dry_run": dry_run})
 
 
 @mcp.tool()

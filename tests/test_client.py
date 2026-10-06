@@ -4,11 +4,13 @@ import json
 import socket
 import sys
 import threading
+from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from max_mcp_codex.bridge_client import MaxBridgeClient, _legacy_command
+from max_mcp_codex import server as mcp_server
 
 
 def main() -> None:
@@ -51,6 +53,21 @@ def main() -> None:
     )
     assert 'cylinder name:name' in cylinder
     assert 'sides:12' in cylinder
+    mesh = _legacy_command(
+        "object.create_mesh",
+        {
+            "name": "Codex_Mesh",
+            "vertices": [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+            "faces": [[1, 2, 3]],
+            "position": [4, 5, 6],
+        },
+    )
+    assert 'mesh name:name vertices:verts faces:faces' in mesh
+    assert 'point3 1.0 0.0 0.0' in mesh
+    assert '(point3 1 2 3)' in mesh
+    with patch.object(mcp_server.bridge, "call", return_value={"ok": True, "legacy": True}):
+        guarded = mcp_server._call("object.transform", {"expected_scene_seq": 1})
+    assert guarded["error"]["code"] == "scene_guard_unavailable"
     partial = _legacy_command(
         "object.transform",
         {"name": "Codex_Box", "position": [1, None, 3], "rotation_degrees": [None, 45, None]},

@@ -64,7 +64,8 @@ fn mcp_error id code message data:undefined = (
 
 fn mcp_capabilities = #(
     "host.status", "scene.summary", "scene.verify",
-    "object.create_box", "object.create_cylinder", "object.transform", "object.delete"
+    "object.create_box", "object.create_cylinder", "object.create_mesh",
+    "object.transform", "object.delete"
 )
 
 fn mcp_status = (
@@ -120,12 +121,30 @@ fn mcp_node_ref n = (
     h
 )
 
+fn mcp_scene_guard id params = (
+    local expected = mcp_get params "expected_scene_seq" undefined
+    if expected == undefined then true
+    else if ((mcp_num expected -1.0) as integer) == mcp_scene_seq then true
+    else (
+        false
+    )
+)
+
+fn mcp_scene_guard_error id params = (
+    local expected = mcp_get params "expected_scene_seq" undefined
+    local data = mcp_hash()
+    mcp_put data "expected_scene_seq" ((mcp_num expected -1.0) as integer)
+    mcp_put data "actual_scene_seq" mcp_scene_seq
+    mcp_error id "stale_scene" "The scene changed after the request was planned." data:data
+)
+
 fn mcp_create_box id params = (
     local name = mcp_text (mcp_get params "name" undefined) "MCP_Box"
     local width = mcp_num (mcp_get params "width" undefined) 100.0
     local length = mcp_num (mcp_get params "length" undefined) 100.0
     local height = mcp_num (mcp_get params "height" undefined) 100.0
     local dry_run = (mcp_get params "dry_run" false) == true
+    if not (mcp_scene_guard id params) then return (mcp_scene_guard_error id params)
     if width <= 0 or length <= 0 or height <= 0 then
         return mcp_error id "invalid_dimensions" "Box dimensions must be greater than zero."
     local p = mcp_get params "position" #(0.0, 0.0, 0.0)
@@ -162,6 +181,7 @@ fn mcp_create_cylinder id params = (
     local height = mcp_num (mcp_get params "height" undefined) 100.0
     local segments = (mcp_num (mcp_get params "segments" undefined) 32.0) as integer
     local dry_run = (mcp_get params "dry_run" false) == true
+    if not (mcp_scene_guard id params) then return (mcp_scene_guard_error id params)
     if radius <= 0 or height <= 0 or segments < 3 then
         return mcp_error id "invalid_dimensions" "Cylinder radius/height must be positive and segments must be at least 3."
     local p = mcp_get params "position" #(0.0, 0.0, 0.0)
@@ -196,6 +216,64 @@ fn mcp_create_cylinder id params = (
     mcp_ok id result
 )
 
+fn mcp_create_mesh id params = (
+    local name = mcp_text (mcp_get params "name" undefined) "MCP_Mesh"
+    local raw_vertices = mcp_get params "vertices" undefined
+    local raw_faces = mcp_get params "faces" undefined
+    local dry_run = (mcp_get params "dry_run" false) == true
+    if not (mcp_scene_guard id params) then return (mcp_scene_guard_error id params)
+    if raw_vertices == undefined or raw_faces == undefined then
+        return mcp_error id "invalid_mesh" "vertices and faces are required."
+    local vertices = #()
+    for item in raw_vertices do (
+        if item == undefined or item.count != 3 then
+            return mcp_error id "invalid_mesh" "Every vertex must contain three numbers."
+        append vertices (point3 (mcp_num item[1] 0.0) (mcp_num item[2] 0.0) (mcp_num item[3] 0.0))
+    )
+    local faces = #()
+    for item in raw_faces do (
+        if item == undefined or item.count != 3 then
+            return mcp_error id "invalid_mesh" "Only triangular faces are supported."
+        local a = (mcp_num item[1] 0.0) as integer
+        local b = (mcp_num item[2] 0.0) as integer
+        local c = (mcp_num item[3] 0.0) as integer
+        if a < 1 or b < 1 or c < 1 or a > vertices.count or b > vertices.count or c > vertices.count then
+            return mcp_error id "invalid_mesh" "Face indices must reference a vertex using 1-based indices."
+        append faces (point3 a b c)
+    )
+    if vertices.count < 3 or faces.count < 1 then
+        return mcp_error id "invalid_mesh" "A mesh needs at least three vertices and one face."
+    if dry_run then (
+        local plan = mcp_hash()
+        mcp_put plan "ok" true
+        mcp_put plan "dry_run" true
+        mcp_put plan "operation" "object.create_mesh"
+        mcp_put plan "name" name
+        mcp_put plan "vertex_count" vertices.count
+        mcp_put plan "face_count" faces.count
+        return mcp_ok id plan
+    )
+    if (getNodeByName name exact:true) != undefined then
+        return mcp_error id "name_conflict" ("An object named '" + name + "' already exists.")
+    local p = mcp_get params "position" #(0.0, 0.0, 0.0)
+    local pos = point3 (mcp_num p[1] 0.0) (mcp_num p[2] 0.0) (mcp_num p[3] 0.0)
+    local node = undefined
+    undo "MCP create mesh" on (
+        node = mesh name:name vertices:vertices faces:faces
+        node.position = pos
+        update node
+        mcp_scene_seq += 1
+    )
+    local result = mcp_hash()
+    mcp_put result "ok" true
+    mcp_put result "scene_seq" mcp_scene_seq
+    mcp_put result "node" (mcp_node_ref node)
+    mcp_put result "vertex_count" vertices.count
+    mcp_put result "face_count" faces.count
+    mcp_put result "position" #(node.position.x, node.position.y, node.position.z)
+    mcp_ok id result
+)
+
 fn mcp_transform_object id params = (
     local name = mcp_text (mcp_get params "name" undefined) ""
     local node = getNodeByName name exact:true
@@ -203,6 +281,7 @@ fn mcp_transform_object id params = (
     local dry_run = (mcp_get params "dry_run" false) == true
     local position = mcp_get params "position" undefined
     local rotation = mcp_get params "rotation_degrees" undefined
+    if not (mcp_scene_guard id params) then return (mcp_scene_guard_error id params)
     if position == undefined and rotation == undefined then
         return mcp_error id "invalid_transform" "Provide position or rotation_degrees."
     if dry_run then (
@@ -236,6 +315,7 @@ fn mcp_delete_object id params = (
     local node = getNodeByName name exact:true
     if node == undefined then return mcp_error id "not_found" ("Object not found: " + name)
     local dry_run = (mcp_get params "dry_run" false) == true
+    if not (mcp_scene_guard id params) then return (mcp_scene_guard_error id params)
     if dry_run then (
         local plan = mcp_hash()
         mcp_put plan "ok" true
@@ -266,6 +346,7 @@ fn mcp_dispatch request = (
             "scene.verify": mcp_ok id (mcp_verify_scene())
             "object.create_box": mcp_create_box id params
             "object.create_cylinder": mcp_create_cylinder id params
+            "object.create_mesh": mcp_create_mesh id params
             "object.transform": mcp_transform_object id params
             "object.delete": mcp_delete_object id params
             default: mcp_error id "method_not_found" ("Unknown method: " + method)

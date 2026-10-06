@@ -24,6 +24,27 @@ boxParams.Add "position" #(1.0, 2.0, 3.0)
 boxParams.Add "dry_run" false
 boxReq.Add "params" boxParams
 format "%\n" (json.SerializeObject (mcp_dispatch boxReq)) to:out
+local meshReq = dotNetObject "System.Collections.Hashtable"
+meshReq.Add "jsonrpc" "2.0"
+meshReq.Add "id" 7
+meshReq.Add "method" "object.create_mesh"
+local meshParams = dotNetObject "System.Collections.Hashtable"
+meshParams.Add "name" "CodexSmokeMesh"
+meshParams.Add "vertices" #(#(-10.0, -10.0, 0.0), #(10.0, -10.0, 0.0), #(10.0, 10.0, 0.0), #(-10.0, 10.0, 0.0), #(0.0, 0.0, 20.0))
+meshParams.Add "faces" #(#(1, 2, 5), #(2, 3, 5), #(3, 4, 5), #(4, 1, 5))
+meshParams.Add "position" #(100.0, 200.0, 0.0)
+meshReq.Add "params" meshParams
+format "%\n" (json.SerializeObject (mcp_dispatch meshReq)) to:out
+local staleReq = dotNetObject "System.Collections.Hashtable"
+staleReq.Add "jsonrpc" "2.0"
+staleReq.Add "id" 8
+staleReq.Add "method" "object.transform"
+local staleParams = dotNetObject "System.Collections.Hashtable"
+staleParams.Add "name" "CodexSmokeBox"
+staleParams.Add "position" #(99.0, 99.0, 99.0)
+staleParams.Add "expected_scene_seq" 0
+staleReq.Add "params" staleParams
+format "%\n" (json.SerializeObject (mcp_dispatch staleReq)) to:out
 local transformReq = dotNetObject "System.Collections.Hashtable"
 transformReq.Add "jsonrpc" "2.0"
 transformReq.Add "id" 3

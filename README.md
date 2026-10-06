@@ -11,6 +11,7 @@
 - MCP 服务运行在 3ds Max 外部，避免依赖 Max 内置 Python 版本。
 - Max 内部桥接优先使用 MaxScript / `pymxs`，覆盖 3ds Max 2022-2027。
 - 工具使用严格 JSON Schema，优先提供高层建模操作，不把任意脚本执行作为默认入口。
+- 支持从显式三角网格开始创建墙体、道路和自定义楼体轮廓。
 - 每次修改都返回可验证的对象引用、场景序号和变更摘要。
 - 支持 dry-run、Undo、能力检测和可重复的场景 smoke test，方便 Codex 自主校验。
 
@@ -56,7 +57,7 @@ tests/               协议和桥接客户端测试
 
 ## 自动安装后的使用
 
-Codex 启动项目级 MCP 后，先调用 `get_status`，再调用 `get_scene_summary`。建模工具目前包括 `create_box`、`create_cylinder`、`transform_object` 和 `delete_object`；它们都支持 `dry_run`，修改后用 `verify_scene` 收口。开发者调试和测试也应从项目级 `.codex/config.toml` 启动，避免产生第二套用户安装流程。
+Codex 启动项目级 MCP 后，先调用 `get_status`，再调用 `get_scene_summary`。建模工具包括基础体、`create_mesh`、变换和删除；写操作支持 `dry_run`，也可以传入 `expected_scene_seq` 防止基于旧场景误改，修改后用 `verify_scene` 收口。开发者调试和测试也应从项目级 `.codex/config.toml` 启动，避免产生第二套用户安装流程。
 
 ### 真实 Max smoke test
 

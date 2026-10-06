@@ -147,7 +147,7 @@ def _ms_string(value: str) -> str:
 def _legacy_command(method: str, params: dict[str, Any]) -> str:
     """Generate a small, deterministic MaxScript command for the fallback."""
     if method == "host.status":
-        return "(local j=dotNetClass \"Newtonsoft.Json.JsonConvert\"; local h=dotNetObject \"System.Collections.Hashtable\"; h.Add \"ok\" true; h.Add \"transport\" \"native_tcp\"; h.Add \"max_version\" ((maxVersion())[1] as string); h.Add \"object_count\" objects.count; h.Add \"selection_count\" selection.count; h.Add \"capabilities\" #(\"host.status\", \"scene.summary\", \"scene.verify\", \"object.create_box\", \"object.create_cylinder\", \"object.transform\", \"object.delete\"); j.SerializeObject h)"
+        return "(local j=dotNetClass \"Newtonsoft.Json.JsonConvert\"; local h=dotNetObject \"System.Collections.Hashtable\"; h.Add \"ok\" true; h.Add \"transport\" \"native_tcp\"; h.Add \"max_version\" ((maxVersion())[1] as string); h.Add \"object_count\" objects.count; h.Add \"selection_count\" selection.count; h.Add \"capabilities\" #(\"host.status\", \"scene.summary\", \"scene.verify\", \"object.create_box\", \"object.create_cylinder\", \"object.create_mesh\", \"object.transform\", \"object.delete\"); j.SerializeObject h)"
     if method == "scene.summary":
         return "(local j=dotNetClass \"Newtonsoft.Json.JsonConvert\"; local h=dotNetObject \"System.Collections.Hashtable\"; h.Add \"ok\" true; h.Add \"object_count\" objects.count; h.Add \"geometry_count\" geometry.count; h.Add \"selection\" (for n in selection collect n.name); h.Add \"names\" (for n in geometry collect n.name); j.SerializeObject h)"
     if method == "scene.verify":
@@ -190,6 +190,35 @@ def _legacy_command(method: str, params: dict[str, Any]) -> str:
             "local h=dotNetObject \"System.Collections.Hashtable\"; "
             f"local n=getNodeByName {name} exact:true; "
             f"if n==undefined then (h.Add \"ok\" false; h.Add \"error\" \"not_found\") else (undo \"MCP transform object\" on ({';'.join(assignments)}); local r=n.rotation as eulerangles; h.Add \"ok\" true; h.Add \"name\" n.name; h.Add \"handle\" ((getHandleByAnim n) as string); h.Add \"position\" #(n.position.x,n.position.y,n.position.z); h.Add \"rotation_degrees\" #(r.x,r.y,r.z)); "
+            "j.SerializeObject h)"
+        )
+    if method == "object.create_mesh":
+        name = _ms_string(str(params.get("name", "MCP_Mesh")))
+        vertices = params.get("vertices", [])
+        faces = params.get("faces", [])
+        if len(vertices) < 3 or not faces:
+            raise BridgeError("object.create_mesh requires at least three vertices and one face.")
+        if any(len(vertex) != 3 for vertex in vertices) or any(len(face) != 3 for face in faces):
+            raise BridgeError("object.create_mesh accepts three-component vertices and triangular faces.")
+        vertex_count = len(vertices)
+        if any(index < 1 or index > vertex_count for face in faces for index in face):
+            raise BridgeError("object.create_mesh face indices must be 1-based vertex indices.")
+        vertex_literal = "#(" + ",".join(
+            f"(point3 {float(vertex[0])} {float(vertex[1])} {float(vertex[2])})"
+            for vertex in vertices
+        ) + ")"
+        face_literal = "#(" + ",".join(
+            f"(point3 {int(face[0])} {int(face[1])} {int(face[2])})" for face in faces
+        ) + ")"
+        position = params.get("position", [0.0, 0.0, 0.0])
+        x, y, z = (float(position[i]) for i in range(3))
+        dry_run = "true" if params.get("dry_run", False) else "false"
+        return (
+            "(local j=dotNetClass \"Newtonsoft.Json.JsonConvert\"; "
+            "local h=dotNetObject \"System.Collections.Hashtable\"; "
+            f"local name={name}; local dry={dry_run}; local verts={vertex_literal}; local faces={face_literal}; local n=undefined; "
+            "if dry then (h.Add \"ok\" true; h.Add \"dry_run\" true; h.Add \"vertex_count\" verts.count; h.Add \"face_count\" faces.count) "
+            f"else (if (getNodeByName name exact:true)!=undefined then (h.Add \"ok\" false; h.Add \"error\" \"name_conflict\") else (undo \"MCP create mesh\" on (n=mesh name:name vertices:verts faces:faces; n.position=(point3 {x} {y} {z}); update n); h.Add \"ok\" true; h.Add \"name\" name; h.Add \"handle\" ((getHandleByAnim n) as string); h.Add \"class\" ((classOf n) as string); h.Add \"vertex_count\" verts.count; h.Add \"face_count\" faces.count; h.Add \"position\" #(n.position.x,n.position.y,n.position.z))); "
             "j.SerializeObject h)"
         )
     if method == "object.create_cylinder":

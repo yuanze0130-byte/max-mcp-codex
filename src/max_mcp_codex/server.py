@@ -13,7 +13,17 @@ bridge = MaxBridgeClient()
 
 def _call(method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     try:
-        return bridge.call(method, params)
+        result = bridge.call(method, params)
+        if params and params.get("expected_scene_seq") is not None and result.get("legacy"):
+            return {
+                "ok": False,
+                "error": {
+                    "code": "scene_guard_unavailable",
+                    "message": "expected_scene_seq requires the bundled HTTP bridge; the legacy TCP bridge does not expose scene_seq.",
+                },
+                "method": method,
+            }
+        return result
     except BridgeError as exc:
         return {
             "ok": False,
@@ -44,6 +54,7 @@ def create_box(
     y: float = 0.0,
     z: float = 0.0,
     dry_run: bool = False,
+    expected_scene_seq: int | None = None,
 ) -> dict[str, Any]:
     """Create one box in a single undo transaction and return its node identity."""
     return _call(
@@ -55,6 +66,7 @@ def create_box(
             "height": height,
             "position": [x, y, z],
             "dry_run": dry_run,
+            "expected_scene_seq": expected_scene_seq,
         },
     )
 
@@ -69,6 +81,7 @@ def create_cylinder(
     z: float = 0.0,
     segments: int = 32,
     dry_run: bool = False,
+    expected_scene_seq: int | None = None,
 ) -> dict[str, Any]:
     """Create a cylinder with explicit dimensions in world units."""
     return _call(
@@ -80,6 +93,7 @@ def create_cylinder(
             "segments": segments,
             "position": [x, y, z],
             "dry_run": dry_run,
+            "expected_scene_seq": expected_scene_seq,
         },
     )
 
@@ -94,6 +108,7 @@ def transform_object(
     ry: float | None = None,
     rz: float | None = None,
     dry_run: bool = False,
+    expected_scene_seq: int | None = None,
 ) -> dict[str, Any]:
     """Apply an explicit transform and return the post-edit transform."""
     position = [x, y, z] if any(value is not None for value in (x, y, z)) else None
@@ -110,14 +125,77 @@ def transform_object(
             "position": position,
             "rotation_degrees": rotation,
             "dry_run": dry_run,
+            "expected_scene_seq": expected_scene_seq,
         },
     )
 
 
 @mcp.tool()
-def delete_object(name: str, dry_run: bool = False) -> dict[str, Any]:
+def delete_object(
+    name: str,
+    dry_run: bool = False,
+    expected_scene_seq: int | None = None,
+) -> dict[str, Any]:
     """Delete one named object in a single undo transaction."""
-    return _call("object.delete", {"name": name, "dry_run": dry_run})
+    return _call(
+        "object.delete",
+        {
+            "name": name,
+            "dry_run": dry_run,
+            "expected_scene_seq": expected_scene_seq,
+        },
+    )
+
+
+@mcp.tool()
+def create_mesh(
+    name: str,
+    vertices: list[list[float]],
+    faces: list[list[int]],
+    x: float = 0.0,
+    y: float = 0.0,
+    z: float = 0.0,
+    dry_run: bool = False,
+    expected_scene_seq: int | None = None,
+) -> dict[str, Any]:
+    """Create a triangulated mesh from explicit 1-based face indices."""
+    if len(vertices) < 3:
+        return {
+            "ok": False,
+            "error": {"code": "invalid_mesh", "message": "At least three vertices are required."},
+        }
+    if not faces:
+        return {
+            "ok": False,
+            "error": {"code": "invalid_mesh", "message": "At least one triangular face is required."},
+        }
+    if any(len(vertex) != 3 for vertex in vertices):
+        return {
+            "ok": False,
+            "error": {"code": "invalid_mesh", "message": "Every vertex must contain exactly three numbers."},
+        }
+    if any(len(face) != 3 for face in faces):
+        return {
+            "ok": False,
+            "error": {"code": "invalid_mesh", "message": "Only triangular faces are supported."},
+        }
+    vertex_count = len(vertices)
+    if any(index < 1 or index > vertex_count for face in faces for index in face):
+        return {
+            "ok": False,
+            "error": {"code": "invalid_mesh", "message": "Face indices must be 1-based and reference a vertex."},
+        }
+    return _call(
+        "object.create_mesh",
+        {
+            "name": name,
+            "vertices": vertices,
+            "faces": faces,
+            "position": [x, y, z],
+            "dry_run": dry_run,
+            "expected_scene_seq": expected_scene_seq,
+        },
+    )
 
 
 @mcp.tool()
